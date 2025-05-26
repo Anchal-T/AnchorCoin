@@ -1,0 +1,4 @@
+  File "/app/app.py", line 948
+    affectedAddresses.add(data.block.miner); // Miner's address
+                                                     ^
+SyntaxError: unterminated string literal (detected at line 948)

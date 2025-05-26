@@ -1,0 +1,322 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnchorCoin Showcase</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>AnchorCoin Blockchain Showcase</h1>
+
+    <div id="walletSection" class="section">
+        <h2>Wallet Management</h2>
+        <button id="createWalletBtn">Create New Wallet</button>
+        <div id="newWalletInfo">
+            <p>New Wallet Address: <span id="newWalletAddress"></span></p>
+            <p>New Wallet Private Key: <span id="newWalletPrivateKey"></span> (Keep this safe!)</p>
+        </div>
+        <hr>
+        <h3>Check Balance / View Wallet</h3>
+        <input type="text" id="myAddressInput" placeholder="Enter your address">
+        <button id="getWalletDataBtn">Get Wallet Data</button>
+        <p>Address: <span id="walletAddress">N/A</span></p>
+        <p>Private Key (for sending): <input type="text" id="senderPrivateKeyForTx" placeholder="Enter your private key to send" style="width: 80%;"></p>
+        <p>Balance: <span id="walletBalance">N/A</span> ETH</p>
+    </div>
+
+    <div id="sendTransactionSection" class="section">
+        <h2>Send AnchorCoin</h2>
+        <div>
+            <label for="senderAddress">Your Address (Sender):</label>
+            <input type="text" id="senderAddress" placeholder="Your Wallet Address (auto-filled if new wallet created)">
+        </div>
+        <div>
+            <label for="recipientAddress">Recipient Address:</label>
+            <input type="text" id="recipientAddress" placeholder="Recipient's Address">
+        </div>
+        <div>
+            <label for="sendAmount">Amount:</label>
+            <input type="number" id="sendAmount" placeholder="Amount to send">
+        </div>
+        <button id="sendTransactionBtn">Send Transaction</button>
+    </div>
+
+    <div id="mempoolSection" class="section">
+        <h2>Mempool (Pending Transactions)</h2>
+        <button id="refreshMempoolBtn">Refresh Mempool</button>
+        <pre id="mempoolData">No pending transactions.</pre>
+    </div>
+
+    <div id="blockchainSection" class="section">
+        <h2>Blockchain Explorer</h2>
+        <button id="mineBlockBtn">Mine New Block</button>
+        <button id="refreshBlockchainBtn">Refresh Blockchain</button>
+        <div id="blockchainData">
+            <p>Loading blockchain...</p>
+        </div>
+    </div>
+
+    <div id="notificationsSection" class="section">
+        <h3>Notifications</h3>
+        <ul id="notificationsOutput">
+            <!-- Notifications will be added here -->
+        </ul>
+    </div>
+
+    <script>
+        // Basic JavaScript placeholders for future functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const newWalletAddressEl = document.getElementById('newWalletAddress');
+            const newWalletPrivateKeyEl = document.getElementById('newWalletPrivateKey');
+            const walletAddressEl = document.getElementById('walletAddress');
+            const walletPrivateKeyEl = document.getElementById('senderPrivateKeyForTx'); // This field is for input
+            const walletBalanceEl = document.getElementById('walletBalance');
+            const checkBalanceAddressInput = document.getElementById('checkBalanceAddress');
+            const balanceResultEl = document.getElementById('balanceResult');
+            const senderAddressInput = document.getElementById('senderAddress');
+            const recipientAddressInput = document.getElementById('recipientAddress');
+            const sendAmountInput = document.getElementById('sendAmount');
+            const txStatusEl = document.getElementById('txStatus');
+            const mempoolDataEl = document.getElementById('mempoolData');
+            const blockchainDataEl = document.getElementById('blockchainData');
+            const notificationsOutputEl = document.getElementById('notificationsOutput');
+
+            function logNotification(message, type = 'info') {
+                const listItem = document.createElement('li');
+                listItem.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+                listItem.className = type; // For potential styling (e.g., .error, .success)
+                notificationsOutputEl.insertBefore(listItem, notificationsOutputEl.firstChild);
+                if (notificationsOutputEl.children.length > 10) { // Keep only last 10 messages
+                    notificationsOutputEl.removeChild(notificationsOutputEl.lastChild);
+                }
+            }
+
+            async function fetchBalance(address) {
+                if (!address) {
+                    walletBalanceEl.textContent = 'N/A';
+                    if (balanceResultEl) balanceResultEl.textContent = 'Please enter an address.';
+                    return;
+                }
+                try {
+                    const response = await fetch(`/api/wallet/${address}`);
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    if (data.balance !== undefined) {
+                        walletAddressEl.textContent = address; // Update the displayed address
+                        walletBalanceEl.textContent = `${data.balance} ETH`;
+                        if (balanceResultEl) balanceResultEl.textContent = `Balance for ${address}: ${data.balance} ETH`;
+                        logNotification(`Balance for ${address}: ${data.balance} ETH`);
+                    } else {
+                        walletBalanceEl.textContent = 'Error';
+                        if (balanceResultEl) balanceResultEl.textContent = `Error fetching balance for ${address}.`;
+                        logNotification(`Error fetching balance for ${address}.`, 'error');
+                    }
+                } catch (error) {
+                    console.error('Error fetching balance:', error);
+                    walletBalanceEl.textContent = 'Error';
+                    if (balanceResultEl) balanceResultEl.textContent = `Error: ${error.message}`;
+                    logNotification(`Error fetching balance for ${address}: ${error.message}`, 'error');
+                }
+            }
+            
+            async function fetchBlockchain() {
+                try {
+                    const response = await fetch('/api/blockchain/blocks');
+                    const data = await response.json();
+                    if (data.blocks && data.blocks.length > 0) {
+                        blockchainDataEl.innerHTML = ''; // Clear previous content
+                        data.blocks.forEach((block, index) => {
+                            const blockDiv = document.createElement('div');
+                            blockDiv.classList.add('block');
+                            const blockHashShort = block.hash ? block.hash.substring(0, 10) + '...' : 'N/A';
+                            const prevHashShort = block.previous_hash === "0".repeat(64) ? "0" : block.previous_hash.substring(0,10) + "...";
+                            
+                            let transactionsHtml = '<ul>';
+                            block.transactions.forEach(tx => {
+                                transactionsHtml += `<li>TxID: ${tx.tx_id.substring(0,10)}... Amount: ${tx.amount}, Fee: ${tx.fee}</li>`;
+                            });
+                            transactionsHtml += '</ul>';
+
+                            blockDiv.innerHTML = `
+                                <h3>Block ${index} (Hash: ${blockHashShort})</h3>
+                                <p>Timestamp: ${new Date(block.timestamp * 1000).toLocaleString()}</p>
+                                <p>Previous Hash: ${prevHashShort}</p>
+                                <p>Nonce: ${block.nonce}</p>
+                                <p>Miner: ${block.miner ? block.miner.substring(0,10) + '...' : 'N/A'}</p>
+                                <p>Transactions:</p>
+                                ${transactionsHtml}
+                            `;
+                            blockchainDataEl.appendChild(blockDiv);
+                        });
+                    } else {
+                        blockchainDataEl.textContent = "Blockchain is empty or failed to load.";
+                    }
+                } catch (error) {
+                    console.error('Error fetching blockchain:', error);
+                    blockchainDataEl.textContent = `Error fetching blockchain: ${error.message}`;
+                    logNotification(`Error fetching blockchain: ${error.message}`, 'error');
+                }
+            }
+
+            async function fetchMempool() {
+                try {
+                    const response = await fetch('/api/mempool');
+                    const data = await response.json();
+                    if (data.length > 0) {
+                        mempoolDataEl.textContent = JSON.stringify(data, null, 2);
+                    } else {
+                        mempoolDataEl.textContent = "Mempool is empty.";
+                    }
+                } catch (error) {
+                    console.error('Error fetching mempool:', error);
+                    mempoolDataEl.textContent = `Error fetching mempool: ${error.message}`;
+                    logNotification(`Error fetching mempool: ${error.message}`, 'error');
+                }
+            }
+            
+            document.getElementById('createWalletBtn').addEventListener('click', async () => {
+                try {
+                    const response = await fetch('/api/wallet/create', { method: 'POST' });
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    newWalletAddressEl.textContent = data.address;
+                    newWalletPrivateKeyEl.textContent = data.private_key; // For demo purposes only
+                    senderAddressInput.value = data.address; // Auto-fill for convenience
+                    walletPrivateKeyEl.value = data.private_key; // Auto-fill for convenience
+                    logNotification(`New wallet created: ${data.address}`);
+                    fetchBalance(data.address); // Update balance for the new wallet
+                } catch (error) {
+                    logNotification(`Error creating wallet: ${error.message}`, 'error');
+                    console.error('Error creating wallet:', error);
+                }
+            });
+
+            document.getElementById('getWalletDataBtn').addEventListener('click', () => {
+                const address = checkBalanceAddressInput.value.trim();
+                if (address) {
+                    fetchBalance(address);
+                    // If we stored private keys in a way accessible by address (which we do in `wallets` dict for demo)
+                    if (wallets[address] && wallets[address].export_private_key) {
+                         walletPrivateKeyEl.value = wallets[address].export_private_key(); // DANGEROUS FOR PRODUCTION
+                    } else {
+                         walletPrivateKeyEl.value = "Private key not available for this address on server.";
+                    }
+                } else {
+                    logNotification("Please enter an address to fetch data.", 'warning');
+                }
+            });
+
+            document.getElementById('sendTransactionBtn').addEventListener('click', async () => {
+                const sender = senderAddressInput.value.trim();
+                const recipient = recipientAddressInput.value.trim();
+                const amount = parseFloat(sendAmountInput.value);
+                const privateKey = walletPrivateKeyEl.value.trim(); // Using the pre-filled/manually entered key
+
+                if (!sender || !recipient || isNaN(amount) || amount <= 0 || !privateKey) {
+                    logNotification("Please fill all fields correctly for the transaction.", 'error');
+                    return;
+                }
+
+                const payload = {
+                    sender_address: sender,
+                    recipient_address: recipient,
+                    amount: amount,
+                    private_key: privateKey // Send the private key as string
+                };
+
+                try {
+                    const response = await fetch('/api/transaction/new', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    if (response.ok) {
+                        logNotification(`Transaction submitted: ${result.message}. TxID: ${result.transaction ? result.transaction.tx_id.substring(0,10)+'...' : 'N/A'}`);
+                        fetchMempool(); // Refresh mempool
+                        fetchBalance(sender); // Update sender's balance
+                    } else {
+                        logNotification(`Transaction error: ${result.message || response.statusText}`, 'error');
+                    }
+                } catch (error) {
+                    logNotification(`Error sending transaction: ${error.message}`, 'error');
+                    console.error('Error sending transaction:', error);
+                }
+            });
+
+            document.getElementById('refreshMempoolBtn').addEventListener('click', fetchMempool);
+            document.getElementById('refreshBlockchainBtn').addEventListener('click', fetchBlockchain);
+
+            document.getElementById('mineBlockBtn').addEventListener('click', async () => {
+                logNotification("Mining a new block...");
+                try {
+                    const response = await fetch('/api/mine');
+                    const data = await response.json();
+                    logNotification(data.message || JSON.stringify(data));
+                    if (response.ok && data.block) {
+                        fetchBlockchain();
+                        fetchMempool(); // Mempool should be empty or reduced
+                        // Update balance for the miner (Satoshi in this case)
+                        if (MINER_WALLET && MINER_WALLET.address) { // MINER_WALLET is a server-side variable, not directly accessible here
+                            // We need to get the miner's address from the server or a known source
+                            // For now, let's assume the last block's miner is the one to update
+                            const lastBlock = blockchainData.blocks[blockchainData.blocks.length -1];
+                            if(lastBlock && lastBlock.miner) {
+                                fetchBalance(lastBlock.miner);
+                            }
+                        }
+                    } else {
+                        logNotification(`Mining failed or no transactions to mine: ${data.message}`, 'warning');
+                    }
+                } catch (error) {
+                    logNotification(`Error mining block: ${error.message}`, 'error');
+                    console.error('Error mining block:', error);
+                }
+            });
+
+            // Initial data load
+            fetchBlockchain();
+            fetchMempool();
+            
+            // Fetch initial wallet addresses (Satoshi, Alice, Bob)
+            fetch('/api/get_addresses')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.satoshi_address) {
+                        logNotification(`Satoshi (Miner) Address: ${data.satoshi_address}`);
+                        // Optionally pre-fill the "check balance" field with Satoshi's address
+                        // document.getElementById('checkBalanceAddress').value = data.satoshi_address;
+                        // fetchBalance(data.satoshi_address); // And show its balance
+                    }
+                    if (data.alice_address) {
+                        logNotification(`Alice's Address: ${data.alice_address}`);
+                    }
+                    if (data.bob_address) {
+                        logNotification(`Bob's Address: ${data.bob_address}`);
+                    }
+                });
+        });
+    </script>
+</body>
+</html>
+```
+
+**Step 2: Create `static/style.css` (if it doesn't exist or needs updating)**
+
+```python
+import os
+
+# Ensure the static directory exists
+if not os.path.exists("static"):
+    os.makedirs("static")
+```
