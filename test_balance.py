@@ -5,6 +5,8 @@ import requests
 import json
 import os
 
+from config import BLOCK_REWARD, MIN_TRANSACTION_FEE
+
 # Ensure the script is run from the correct directory where app.py is located
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
